@@ -403,6 +403,8 @@ AILIA_LLM_API int ailiaLLMSetNumThreads(struct AILIALLM* llm, unsigned int n_thr
  *   成功した場合は \ref AILIA_LLM_STATUS_SUCCESS 、そうでなければエラーコードを返す。
  * @details
  *   LLMオブジェクトを作成します。
+ * @remark
+ *   QNNを使用する場合は、この関数を呼び出したスレッドでailiaLLMDestroyを呼び出してLLMオブジェクトを破棄してください。
  *
  * \~english
  * @brief Creates a LLM instance.
@@ -411,6 +413,8 @@ AILIA_LLM_API int ailiaLLMSetNumThreads(struct AILIALLM* llm, unsigned int n_thr
  *   If this function is successful, it returns  \ref AILIA_LLM_STATUS_SUCCESS , or an error code otherwise.
  * @details
  *   Creates a LLM instance.
+ * @remark
+ *   When using QNN, the LLM instance must be destroyed by calling ailiaLLMDestroy on the same thread that called this function.
  */
 AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
 
@@ -693,10 +697,18 @@ AILIA_LLM_API int ailiaLLMGetGeneratedTokenCount(struct AILIALLM* llm, unsigned 
  * \~japanese
  * @brief LLMオブジェクトを破棄します。
  * @param llm LLMオブジェクトポインタ
+ * @remark
+ *   QNNを使用する場合は、ailiaLLMCreateを呼び出したスレッドで呼び出してください。
+ *   QNN使用時に解放だけをUIスレッドなどの別スレッドへ移すと、その後、別のスレッドでQNNを使用する際に
+ *   QnnDevice_create failed: code 14001が発生することがあります。
  *
  * \~english
  * @brief It destroys the LLM instance.
  * @param llm A LLM instance pointer
+ * @remark
+ *   When using QNN, this function must be called on the same thread that called ailiaLLMCreate.
+ *   When using QNN, moving only the release operation to another thread, such as the UI thread, may cause
+ *   QnnDevice_create failed: code 14001 when QNN is subsequently used on a different thread.
  */
 AILIA_LLM_API void ailiaLLMDestroy(struct AILIALLM* llm);
 
