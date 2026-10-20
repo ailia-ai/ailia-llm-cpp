@@ -430,7 +430,7 @@ AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
  *   GGUFまたは自己完結ailia QNNモデルを読み込みます。バックエンド未選択なら
  *   .qnnはHTPに、GGUFはCPU/GPUに自動振り分けされます。明示選択した場合は
  *   バックエンドとモデル形式の一致が必要です。.qnnではn_ctx=0を指定すると
- *   コンパイル済み固定contextを使用し、外部GGUF/Contextは不要です。
+ *   モデル内のコンテキスト長を使用します。
  *
  * \~english
  * @brief Open model file.
@@ -442,8 +442,8 @@ AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
  * @details
  *   Opens a GGUF or self-contained ailia QNN model. Without an explicit backend
  *   selection, .qnn selects HTP and GGUF selects CPU/GPU automatically. An
- *   explicit selection must match the model format. For .qnn, n_ctx=0 selects
- *   its compiled static context and no external GGUF/context is needed.
+ *   explicit selection must match the model format. For .qnn, n_ctx=0 uses
+ *   the context length stored in the model.
  */
 AILIA_LLM_API int ailiaLLMOpenModelFileA(struct AILIALLM* llm, const char *path, unsigned int n_ctx);
 AILIA_LLM_API int ailiaLLMOpenModelFileW(struct AILIALLM* llm, const wchar_t *path, unsigned int n_ctx);
@@ -727,8 +727,7 @@ AILIA_LLM_API void ailiaLLMDestroy(struct AILIALLM* llm);
  *   マルチモーダル機能を使用するには、先にailiaLLMOpenModelFileでテキストモデルを読み込み、
  *   その後でこの関数でマルチモーダルプロジェクタを読み込む必要があります。
  *   画像入力（VLM）には画像対応、音声入力（ALM）には音声対応のmmproj GGUF、
- *   または各入力用コンテキストを含む.qnnが必要です。画像入力（VLM）のみに対応する
- *   既存.qnnは音声入力（ALM）に対応しません。
+ *   または各入力用コンテキストを含む.qnnが必要です。
  *
  * \~english
  * @brief Load multimodal projector file.
@@ -741,7 +740,7 @@ AILIA_LLM_API void ailiaLLMDestroy(struct AILIALLM* llm);
  *   then load the multimodal projector with this function. A .qnn projector
  *   includes its device-specific context and needs no separate GGUF. Image input
  *   (VLM) requires a vision-capable projector, while audio input (ALM) requires
- *   an audio-capable projector. Existing VLM-only packages do not support ALM.
+ *   an audio-capable projector.
  */
 AILIA_LLM_API int ailiaLLMOpenMultimodalProjectorFileA(struct AILIALLM* llm, const char *mmproj_path);
 AILIA_LLM_API int ailiaLLMOpenMultimodalProjectorFileW(struct AILIALLM* llm, const wchar_t *mmproj_path);
