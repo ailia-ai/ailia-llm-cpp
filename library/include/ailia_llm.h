@@ -3,13 +3,13 @@
  * @file ailia_llm.h
  * @brief LLM推論ライブラリ
  * @copyright AXELL CORPORATION, ailia Inc.
- * @date 2026/09/08
+ * @date 2026/10/11
  *
  * \~english
  * @file ailia_llm.h
  * @brief LLM inference library
  * @copyright AXELL CORPORATION, ailia Inc.
- * @date September 8, 2026
+ * @date October 11, 2026
  */
 
 #ifndef INCLUDED_AILIA_LLM
@@ -378,12 +378,33 @@ AILIA_LLM_API int ailiaLLMSetBackend(struct AILIALLM* llm, unsigned int backend_
 
 /**
  * \~japanese
+ * @brief モデルを開く前にCPUスレッド数を設定します。
+ * @param llm LLMインスタンス
+ * @param n_threads スレッド数（0は自動設定）。
+ * @return 成功時はAILIA_LLM_STATUS_SUCCESS。モデルを開いた後はAILIA_LLM_STATUS_INVALID_STATE。
+ * @details 未指定の場合も0として扱います。Androidでは高効率コア（高性能側のbig/prime）の数を使用します。
+ * 取得できない場合は既存のコア数判定を使用します。本体のDecode/Prefill、assistant、VLM/ALMのCPU推論スレッド数に同じ値を使用します。
+ *
+ * \~english
+ * @brief Sets the CPU thread count before opening the model.
+ * @param llm LLM instance
+ * @param n_threads Thread count (0 selects automatically).
+ * @return AILIA_LLM_STATUS_SUCCESS on success, or AILIA_LLM_STATUS_INVALID_STATE after a model is opened.
+ * @details The default is 0 when this API is not called. On Android, automatic selection uses the number of performance (big/prime) cores.
+ * If topology is unavailable, the existing core-count heuristic is used. Target decode/prefill, assistant and VLM/ALM CPU inference threads share this value.
+ */
+AILIA_LLM_API int ailiaLLMSetNumThreads(struct AILIALLM* llm, unsigned int n_threads);
+
+/**
+ * \~japanese
  * @brief LLMオブジェクトを作成します。
  * @param llm LLMオブジェクトポインタへのポインタ
  * @return
  *   成功した場合は \ref AILIA_LLM_STATUS_SUCCESS 、そうでなければエラーコードを返す。
  * @details
  *   LLMオブジェクトを作成します。
+ * @remark
+ *   QNNを使用する場合は、この関数を呼び出したスレッドでailiaLLMDestroyを呼び出してLLMオブジェクトを破棄してください。
  *
  * \~english
  * @brief Creates a LLM instance.
@@ -392,6 +413,8 @@ AILIA_LLM_API int ailiaLLMSetBackend(struct AILIALLM* llm, unsigned int backend_
  *   If this function is successful, it returns  \ref AILIA_LLM_STATUS_SUCCESS , or an error code otherwise.
  * @details
  *   Creates a LLM instance.
+ * @remark
+ *   When using QNN, the LLM instance must be destroyed by calling ailiaLLMDestroy on the same thread that called this function.
  */
 AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
 
@@ -407,7 +430,7 @@ AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
  *   GGUFまたは自己完結ailia QNNモデルを読み込みます。バックエンド未選択なら
  *   .qnnはHTPに、GGUFはCPU/GPUに自動振り分けされます。明示選択した場合は
  *   バックエンドとモデル形式の一致が必要です。.qnnではn_ctx=0を指定すると
- *   コンパイル済み固定contextを使用し、外部GGUF/Contextは不要です。
+ *   モデル内のコンテキスト長を使用します。
  *
  * \~english
  * @brief Open model file.
@@ -419,11 +442,33 @@ AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
  * @details
  *   Opens a GGUF or self-contained ailia QNN model. Without an explicit backend
  *   selection, .qnn selects HTP and GGUF selects CPU/GPU automatically. An
- *   explicit selection must match the model format. For .qnn, n_ctx=0 selects
- *   its compiled static context and no external GGUF/context is needed.
+ *   explicit selection must match the model format. For .qnn, n_ctx=0 uses
+ *   the context length stored in the model.
  */
 AILIA_LLM_API int ailiaLLMOpenModelFileA(struct AILIALLM* llm, const char *path, unsigned int n_ctx);
 AILIA_LLM_API int ailiaLLMOpenModelFileW(struct AILIALLM* llm, const wchar_t *path, unsigned int n_ctx);
+
+/**
+ * \~japanese
+ * @brief MTPドラフトモデルを開き、生成をドラフト・本体検証経路に切り替えます。
+ * @param llm LLMオブジェクト
+ * @param path 対応するGemma 4 assistant GGUF、またはQNN本体用assistant .qnnのパス（A: UTF-8、W: UTF-16）
+ * @param n_draft ドラフトトークン数（1以上）。QNNでは最大3。
+ * @details 本体を開いた後、プロンプト設定前に一度呼び出します。
+ * CPU/GPU Gemma 4 GGUFとQNNのテキスト生成に対応します。
+ * 指定数のドラフトと本体の1トークンを合わせて検証します。
+ * \~english
+ * @brief Open an MTP assistant and enable draft/target verification decoding.
+ * @param llm LLM instance
+ * @param path Path to a matching Gemma 4 assistant GGUF, or assistant .qnn for a QNN target (A: UTF-8, W: UTF-16)
+ * @param n_draft Number of draft tokens (at least 1). QNN supports up to 3.
+ * @details Call once after opening the target and before setting a prompt.
+ * Supports text generation with CPU/GPU Gemma 4 GGUF and QNN models.
+ * Verify the requested draft tokens together with one target token.
+ */
+AILIA_LLM_API int ailiaLLMOpenMtpModelFileA(struct AILIALLM* llm, const char *path, unsigned int n_draft);
+AILIA_LLM_API int ailiaLLMOpenMtpModelFileW(struct AILIALLM* llm, const wchar_t *path, unsigned int n_draft);
+
 
 /**
  * \~japanese
@@ -652,10 +697,18 @@ AILIA_LLM_API int ailiaLLMGetGeneratedTokenCount(struct AILIALLM* llm, unsigned 
  * \~japanese
  * @brief LLMオブジェクトを破棄します。
  * @param llm LLMオブジェクトポインタ
+ * @remark
+ *   QNNを使用する場合は、ailiaLLMCreateを呼び出したスレッドで呼び出してください。
+ *   QNN使用時に解放だけをUIスレッドなどの別スレッドへ移すと、その後、別のスレッドでQNNを使用する際に
+ *   QnnDevice_create failed: code 14001が発生することがあります。
  *
  * \~english
  * @brief It destroys the LLM instance.
  * @param llm A LLM instance pointer
+ * @remark
+ *   When using QNN, this function must be called on the same thread that called ailiaLLMCreate.
+ *   When using QNN, moving only the release operation to another thread, such as the UI thread, may cause
+ *   QnnDevice_create failed: code 14001 when QNN is subsequently used on a different thread.
  */
 AILIA_LLM_API void ailiaLLMDestroy(struct AILIALLM* llm);
 
@@ -674,8 +727,7 @@ AILIA_LLM_API void ailiaLLMDestroy(struct AILIALLM* llm);
  *   マルチモーダル機能を使用するには、先にailiaLLMOpenModelFileでテキストモデルを読み込み、
  *   その後でこの関数でマルチモーダルプロジェクタを読み込む必要があります。
  *   画像入力（VLM）には画像対応、音声入力（ALM）には音声対応のmmproj GGUF、
- *   または各入力用コンテキストを含む.qnnが必要です。画像入力（VLM）のみに対応する
- *   既存.qnnは音声入力（ALM）に対応しません。
+ *   または各入力用コンテキストを含む.qnnが必要です。
  *
  * \~english
  * @brief Load multimodal projector file.
@@ -688,7 +740,7 @@ AILIA_LLM_API void ailiaLLMDestroy(struct AILIALLM* llm);
  *   then load the multimodal projector with this function. A .qnn projector
  *   includes its device-specific context and needs no separate GGUF. Image input
  *   (VLM) requires a vision-capable projector, while audio input (ALM) requires
- *   an audio-capable projector. Existing VLM-only packages do not support ALM.
+ *   an audio-capable projector.
  */
 AILIA_LLM_API int ailiaLLMOpenMultimodalProjectorFileA(struct AILIALLM* llm, const char *mmproj_path);
 AILIA_LLM_API int ailiaLLMOpenMultimodalProjectorFileW(struct AILIALLM* llm, const wchar_t *mmproj_path);
@@ -731,7 +783,10 @@ AILIA_LLM_API int ailiaLLMGetMultimodalCapabilities(struct AILIALLM* llm, unsign
  *   messageの内容は内部でコピーされるため、呼び出し後に開放することができます。
  *   画像はファイルパス、エンコード済みバッファ（JPG、PNG等）、またはRaw RGBデータから読み込み可能です。
  *   音声はWAV/MP3/FLACのファイルパスまたはエンコード済みバッファから読み込み可能です。
- *   KVキャッシュの再利用では、ファイル入力はパス、バッファ入力は内容で同一性を判定します。
+ *   KVキャッシュの再利用では、ファイル入力とバッファ入力は内容のハッシュで同一性を判定します。
+ *   エンコーダー出力は現在のプロンプトに含まれるメディアの分だけ保持し、履歴から外れた分は解放します。
+ *   デコード済みの画像・音声は設定処理の終了時に解放します。
+ *   メディアを含まないプロンプトへの切り替えが成功すると、メディアのキャッシュを解放します。
  *
  * \~english
  * @brief Set multimodal prompt.
@@ -747,7 +802,10 @@ AILIA_LLM_API int ailiaLLMGetMultimodalCapabilities(struct AILIALLM* llm, unsign
  *   The content of message is copied internally, so it can be freed after the call.
  *   Images can be loaded from file path, encoded buffer (JPG, PNG, etc.), or raw RGB data.
  *   Audio accepts WAV/MP3/FLAC file paths or encoded buffers, with width/height=0.
- *   KV cache reuse identifies file media by path and buffer media by content.
+ *   KV cache reuse identifies file and buffer media by their content hashes.
+ *   Encoder outputs are retained only for media in the current prompt; removed media is evicted.
+ *   Decoded images/audio are released when prompt setup returns.
+ *   Successfully switching to a prompt without media releases the media caches.
  * @note With tools configured, returns INVALID_STATE. Use ailiaLLMSetPromptJson for tool use with media.
  */
 AILIA_LLM_API int ailiaLLMSetMultimodalPrompt(struct AILIALLM* llm, const AILIALLMMultimodalChatMessage * message, unsigned int message_cnt);
@@ -784,9 +842,17 @@ AILIA_LLM_API int ailiaLLMSetTools(struct AILIALLM* llm, const char *tools_json)
  * @details
  *   roleはsystem/user/assistant/tool、contentは文字列またはnullです。userはcontent配列にも対応します。
  *   配列要素は{"type":"text","text":"..."}、またはtypeがimage/audioでfile_path（ローカルファイル）か
- *   data（標準Base64のエンコード済みファイル）を1つ指定します。JPEG/PNG、WAV/MP3/FLAC等に対応します。
+ *   data（標準Base64のエンコード済みファイル）を1つ指定します。
+ *   画像はJPEG/PNG等、音声はWAV/MP3/FLACに対応します。
  *   メディアは対応projectorの読込が必要です。URL取得・生PCM/RGB・動画には対応しません。
- *   配列順に入力し、画像/音声を含む履歴は毎回評価します。
+ *   配列順に入力します。メディア入力の内容・順序・個数と履歴の接頭部が一致し、
+ *   必要なKV位置が残っている場合はKVキャッシュを再利用します。
+ *   エンコード結果はバックエンドのキャッシュ条件に従って再利用します。
+ *   GGUF・QNNともにKVの再構築が必要な場合も、保持中のメディアのエンコーダー出力を再利用できます。
+ *   ファイルの内容ハッシュは毎回確認し、メディアの内容が変更された場合は再評価します。
+ *   エンコーダー出力は現在のプロンプトに含まれるメディアの分だけ保持し、履歴から外れた分は解放します。
+ *   デコード済みの画像・音声は設定処理の終了時に解放します。
+ *   メディアを含まないプロンプトへの切り替えが成功すると、メディアのキャッシュを解放します。
  *   assistantのcontentをモデル固有構文として再解析しません。reasoning_contentとtool_callsを明示してください。
  *   ailiaLLMGetResponseJsonの結果をassistantメッセージとしてそのまま追加できます。
  *   tool_callsはtype="function"、空でないidとfunction.name、JSONオブジェクトを表す文字列function.argumentsを必要とします。
@@ -809,7 +875,13 @@ AILIA_LLM_API int ailiaLLMSetTools(struct AILIALLM* llm, const char *tools_json)
  *   Parts are {"type":"text","text":"..."}, or type image/audio with exactly one of file_path (local file)
  *   and data (standard padded Base64 encoded file). JPEG/PNG and WAV/MP3/FLAC are supported by the decoder.
  *   Media requires a compatible loaded projector. URLs, raw PCM/RGB and video are unsupported.
- *   Parts retain input order; media history is re-evaluated on each prompt.
+ *   Parts retain input order. Matching history prefixes reuse KV when ordered media inputs are unchanged
+ *   and the required KV positions remain resident. Encoded media is reused subject to backend cache conditions.
+ *   GGUF and QNN reuse retained encoder outputs even when KV must be rebuilt.
+ *   File content hashes are checked on each call; changed media content is re-evaluated.
+ *   Encoder outputs are retained only for media in the current prompt; removed media is evicted.
+ *   Decoded images/audio are released when prompt setup returns.
+ *   Successfully switching to a prompt without media releases the media caches.
  *   Assistant content is not reparsed as model-specific syntax. Supply reasoning_content and tool_calls explicitly.
  *   Append the assistant JSON returned by ailiaLLMGetResponseJson directly to the array.
  *   Each tool call requires type="function", nonempty id and function.name, and function.arguments as a JSON-object string.
