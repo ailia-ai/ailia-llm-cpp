@@ -3,13 +3,13 @@
  * @file ailia_llm.h
  * @brief LLM推論ライブラリ
  * @copyright AXELL CORPORATION, ailia Inc.
- * @date 2026/10/30
+ * @date 2026/11/07
  *
  * \~english
  * @file ailia_llm.h
  * @brief LLM inference library
  * @copyright AXELL CORPORATION, ailia Inc.
- * @date October 30, 2026
+ * @date November 7, 2026
  */
 
 #ifndef INCLUDED_AILIA_LLM
@@ -962,8 +962,11 @@ AILIA_LLM_API const char * ailiaLLMGetErrorDetail(struct AILIALLM * llm);
  * @param enabled 0: 無効（既定値）、1: 有効
  * @return 成功時はAILIA_LLM_STATUS_SUCCESS。モデルを開いた後はINVALID_STATE。
  * @details ailiaLLMCreate後、モデルを開く前に呼び出してください。
- * LLM、MTP、画像・音声グラフに適用します。切り替え時の再ロードとメモリを
- * 削減しますが、SDK内の遅延ロードにより初回実行や生成が遅くなる場合があります。
+ * LLM、MTP、画像・音声グラフに適用します。
+ * 無効時（既定値）はコンテキストを保持して速度を優先し、LLM・MTPのコンテキストはモデルを開く時点で読み込みます。
+ * 有効時はコンテキストを必要時に読み込み、画像・音声とLLMの切り替え時に解放することでメモリ使用量を削減しますが、再ロードにより処理時間が増える場合があります。
+ * 画像・音声のコンテキストは、どちらの場合も初回使用時に読み込みます。
+ * メモリに余裕がない端末（SM8475のVLMなど）では有効にしてください。
  * QNNが使用できない環境で有効化を指定した場合はAILIA_LLM_STATUS_UNIMPLEMENTEDを返します。
  * 無効化はQNN非対応環境でも成功します。
  * \~english
@@ -972,9 +975,12 @@ AILIA_LLM_API const char * ailiaLLMGetErrorDetail(struct AILIALLM * llm);
  * @param enabled 0: disabled (default), 1: enabled
  * @return SUCCESS, INVALID_ARGUMENT, INVALID_STATE after model open, or
  * AILIA_LLM_STATUS_UNIMPLEMENTED when enabling without QNN.
- * @details Call after Create and before opening a model. Applies to LLM, MTP,
- * vision and audio graphs. Reduces context reloads and memory, but SDK lazy
- * loading can increase first-execution or generation latency.
+ * @details Call after Create and before opening a model. Applies to LLM, MTP, vision and audio graphs.
+ * When disabled (default), contexts are retained to prioritize speed, and LLM and MTP
+ * contexts are loaded when the model is opened. When enabled, contexts are loaded when
+ * needed and released when switching between media and the LLM to reduce memory usage,
+ * but reloading may increase processing time. In both modes, vision and audio contexts
+ * are loaded on first use. Enable this on devices with limited memory (e.g. VLM on SM8475).
  * Disabling succeeds even when QNN is unavailable.
  */
 AILIA_LLM_API int ailiaLLMSetQNNGraphSwitching(struct AILIALLM* llm, unsigned int enabled);
