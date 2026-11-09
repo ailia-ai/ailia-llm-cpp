@@ -3,13 +3,13 @@
  * @file ailia_llm.h
  * @brief LLM推論ライブラリ
  * @copyright AXELL CORPORATION, ailia Inc.
- * @date 2026/10/30
+ * @date 2026/11/07
  *
  * \~english
  * @file ailia_llm.h
  * @brief LLM inference library
  * @copyright AXELL CORPORATION, ailia Inc.
- * @date October 30, 2026
+ * @date November 7, 2026
  */
 
 #ifndef INCLUDED_AILIA_LLM
@@ -431,6 +431,9 @@ AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
  *   .qnnはHTPに、GGUFはCPU/GPUに自動振り分けされます。明示選択した場合は
  *   バックエンドとモデル形式の一致が必要です。.qnnではn_ctx=0を指定すると
  *   モデル内のコンテキスト長を使用します。
+ *   1つのLLMオブジェクトで開けるモデルは1つです。読込済みのオブジェクトで再度呼び出すと
+ *   \ref AILIA_LLM_STATUS_INVALID_STATE を返し、読込済みのモデルはそのまま使用できます。
+ *   別のモデルを開く場合は、ailiaLLMDestroyの後にailiaLLMCreateからやり直してください。
  *
  * \~english
  * @brief Open model file.
@@ -444,6 +447,9 @@ AILIA_LLM_API int ailiaLLMCreate(struct AILIALLM** llm);
  *   selection, .qnn selects HTP and GGUF selects CPU/GPU automatically. An
  *   explicit selection must match the model format. For .qnn, n_ctx=0 uses
  *   the context length stored in the model.
+ *   An LLM instance opens one model. Calling this again on an instance with an
+ *   open model returns \ref AILIA_LLM_STATUS_INVALID_STATE and keeps that model
+ *   usable. To open another model, destroy the instance and create a new one.
  */
 AILIA_LLM_API int ailiaLLMOpenModelFileA(struct AILIALLM* llm, const char *path, unsigned int n_ctx);
 AILIA_LLM_API int ailiaLLMOpenModelFileW(struct AILIALLM* llm, const wchar_t *path, unsigned int n_ctx);
@@ -498,7 +504,9 @@ AILIA_LLM_API int ailiaLLMGetContextSize(struct AILIALLM* llm, unsigned int *con
  * @return
  *   成功した場合は \ref AILIA_LLM_STATUS_SUCCESS 、そうでなければエラーコードを返す。
  * @details
- *   LLMのサンプリングの設定を行います。ailiaLLMSetPromptの前に実行する必要があります。
+ *   LLMのサンプリングの設定を行います。設定はプロンプトの設定時（ailiaLLMSetPrompt、
+ *   ailiaLLMSetMultimodalPrompt、ailiaLLMSetPromptJson）に取り込まれ、次のプロンプトから反映されます。
+ *   設定済みのプロンプトの生成には影響しません。
  *
  * \~english
  * @brief Set the sampling parameter.
@@ -510,7 +518,9 @@ AILIA_LLM_API int ailiaLLMGetContextSize(struct AILIALLM* llm, unsigned int *con
  * @return
  *   If this function is successful, it returns  \ref AILIA_LLM_STATUS_SUCCESS , or an error code otherwise.
  * @details
- *  Set LLM sampling parameters. Must be run before ailiaLLMSetPrompt. 
+ *  Set LLM sampling parameters. They are captured when a prompt is set
+ *  (ailiaLLMSetPrompt, ailiaLLMSetMultimodalPrompt, ailiaLLMSetPromptJson) and
+ *  apply from the next prompt; generation for the current prompt is unchanged.
  */
 AILIA_LLM_API int ailiaLLMSetSamplingParams(struct AILIALLM* llm, unsigned int top_k, float top_p, float temp, unsigned int dist);
 
@@ -550,6 +560,8 @@ AILIA_LLM_API int ailiaLLMSetThinking(struct AILIALLM* llm, unsigned int enable)
  *   ツール設定中はINVALID_STATEを返します。最初のuserメッセージからailiaLLMSetPromptJsonを使用してください。
  *   ailiaLLMSetToolsでツールを解除すると本APIを再び使用できます。
  *   messageの内容は内部でコピーされるため、呼び出し後に開放することができます。
+ *   エラーを返した場合、設定済みのプロンプトは破棄されます。次にプロンプトの設定が成功するまで、
+ *   ailiaLLMGenerateとailiaLLMGetResponseJsonはINVALID_STATEを、トークン数の取得は0を返します。
  *
  * \~english
  * @brief Set the prompt.
@@ -564,6 +576,8 @@ AILIA_LLM_API int ailiaLLMSetThinking(struct AILIALLM* llm, unsigned int enable)
  *   Returns INVALID_STATE while tools are configured. Use ailiaLLMSetPromptJson from the first user message.
  *   Clear tools with ailiaLLMSetTools to use this API again.
  *   The contents of the message are copied internally, so you can free them after the call.
+ *   On error, the previously set prompt is discarded: until a prompt is set successfully,
+ *   ailiaLLMGenerate and ailiaLLMGetResponseJson return INVALID_STATE and the token counts are 0.
  */
 AILIA_LLM_API int ailiaLLMSetPrompt(struct AILIALLM* llm, const AILIALLMChatMessage * message, unsigned int message_cnt);
 
@@ -578,6 +592,9 @@ AILIA_LLM_API int ailiaLLMSetPrompt(struct AILIALLM* llm, const AILIALLMChatMess
  *   デコードした結果はailiaLLMGetDeltaText APIで取得します。
  *   ailiaLLMGenerateを呼び出すたびに1トークンずつデコードします。
  *   doneは0か1を取ります。doneが1の場合、生成完了となります。
+ *   doneが1になった後は、次にプロンプトを設定するまで、呼び出すたびにdone=1を返し、テキストは追加されません。
+ *   コンテキストが一杯になると \ref AILIA_LLM_STATUS_CONTEXT_FULL を返します。
+ *   プロンプトが設定されていない場合は \ref AILIA_LLM_STATUS_INVALID_STATE を返します。
  *
  * \~english
  * @brief Perform generate
@@ -589,6 +606,9 @@ AILIA_LLM_API int ailiaLLMSetPrompt(struct AILIALLM* llm, const AILIALLMChatMess
  *   The decoded result is obtained through the ailiaLLMGetDeltaText API.
  *   Each call to ailiaLLMGenerate decodes one token at a time.
  *   The value of done is 0 or 1. If done is 1, the generation is complete.
+ *   After done becomes 1, every call returns done=1 with no new text until the next prompt is set.
+ *   Returns \ref AILIA_LLM_STATUS_CONTEXT_FULL when the context is full, and
+ *   \ref AILIA_LLM_STATUS_INVALID_STATE when no prompt is set.
  */
 AILIA_LLM_API int ailiaLLMGenerate(struct AILIALLM* llm, unsigned int *done);
 
@@ -618,7 +638,8 @@ AILIA_LLM_API int ailiaLLMGetDeltaTextSize(struct AILIALLM* llm, unsigned int *b
  * @return
  *   成功した場合は \ref AILIA_LLM_STATUS_SUCCESS 、そうでなければエラーコードを返す。
  * @details
- *   ailiaLLMGenerate() を一度も実行していない場合は \ref AILIA_LLM_STATUS_INVALID_STATE が返ります。
+ *   直前のailiaLLMGenerateで追加されたテキストを返します。プロンプトの設定直後、生成完了後、
+ *   およびプロンプト未設定時は空文字列です。モデル未読込の場合は \ref AILIA_LLM_STATUS_INVALID_STATE が返ります。
  *
  * \~english
  * @brief Gets the decoded text.
@@ -628,7 +649,9 @@ AILIA_LLM_API int ailiaLLMGetDeltaTextSize(struct AILIALLM* llm, unsigned int *b
  * @return
  *   If this function is successful, it returns  \ref AILIA_LLM_STATUS_SUCCESS , or an error code otherwise.
  * @details
- *   If  ailiaLLMGenerate()  is not run at all, the function returns  \ref AILIA_LLM_STATUS_INVALID_STATE .
+ *   Returns the text added by the last ailiaLLMGenerate call. It is empty right after a prompt is set,
+ *   after generation completes and when no prompt is set. Returns \ref AILIA_LLM_STATUS_INVALID_STATE
+ *   if no model is open.
  */
 AILIA_LLM_API int ailiaLLMGetDeltaText(struct AILIALLM* llm, char * text, unsigned int buf_size);
 
@@ -659,7 +682,10 @@ AILIA_LLM_API int ailiaLLMGetTokenCount(struct AILIALLM* llm, unsigned int *cnt,
  * @return
  *   成功した場合は \ref AILIA_LLM_STATUS_SUCCESS 、そうでなければエラーコードを返す。
  * @details
- *   ailiaLLMSetPromptを呼び出した後に呼び出し可能です。
+ *   設定済みのプロンプトがコンテキスト上で占めるトークン数を返します。ailiaLLMSetPrompt、
+ *   ailiaLLMSetMultimodalPrompt、ailiaLLMSetPromptJsonのいずれで設定した場合も同じ定義で、
+ *   画像・音声を含むプロンプトでは埋め込みのトークン数を含みます。バックエンド（CPU/GPU、QNN）にも依存しません。
+ *   プロンプトが設定されていない場合は0を返します。
  *
  * \~english
  * @brief Gets the count of prompt token.
@@ -668,7 +694,10 @@ AILIA_LLM_API int ailiaLLMGetTokenCount(struct AILIALLM* llm, unsigned int *cnt,
  * @return
  *   If this function is successful, it returns  \ref AILIA_LLM_STATUS_SUCCESS , or an error code otherwise.
  * @details
- *   It can be called after calling ailiaLLMSetPrompt.
+ *   Returns the number of context tokens the current prompt occupies. The definition is the same for
+ *   ailiaLLMSetPrompt, ailiaLLMSetMultimodalPrompt and ailiaLLMSetPromptJson: prompts with images or
+ *   audio include their embedding tokens. It does not depend on the backend (CPU/GPU or QNN).
+ *   Returns 0 when no prompt is set.
  */
 AILIA_LLM_API int ailiaLLMGetPromptTokenCount(struct AILIALLM* llm, unsigned int *cnt);
 
@@ -680,16 +709,18 @@ AILIA_LLM_API int ailiaLLMGetPromptTokenCount(struct AILIALLM* llm, unsigned int
  * @return
  *   成功した場合は \ref AILIA_LLM_STATUS_SUCCESS 、そうでなければエラーコードを返す。
  * @details
- *   ailiaLLMGenerateを呼び出した後に呼び出し可能です。
+ *   現在のプロンプトに対して生成したトークン数を返します。生成終了のトークンを含みます。
+ *   プロンプトが設定されていない場合と、プロンプトの設定直後は0を返します。
  *
  * \~english
- * @brief Gets the count of prompt token.
+ * @brief Gets the count of generated token.
  * @param llm   A LLM instance pointer
  * @param cnt   The count of generated token
  * @return
  *   If this function is successful, it returns  \ref AILIA_LLM_STATUS_SUCCESS , or an error code otherwise.
  * @details
- *   It can be called after calling ailiaLLMGenerate.
+ *   Returns the number of tokens generated for the current prompt, including the end-of-generation
+ *   token. Returns 0 when no prompt is set and right after a prompt is set.
  */
 AILIA_LLM_API int ailiaLLMGetGeneratedTokenCount(struct AILIALLM* llm, unsigned int *cnt);
 
@@ -787,6 +818,7 @@ AILIA_LLM_API int ailiaLLMGetMultimodalCapabilities(struct AILIALLM* llm, unsign
  *   エンコーダー出力は現在のプロンプトに含まれるメディアの分だけ保持し、履歴から外れた分は解放します。
  *   デコード済みの画像・音声は設定処理の終了時に解放します。
  *   メディアを含まないプロンプトへの切り替えが成功すると、メディアのキャッシュを解放します。
+ *   エラーを返した場合はailiaLLMSetPromptと同様に、設定済みのプロンプトを破棄します。
  *
  * \~english
  * @brief Set multimodal prompt.
@@ -806,6 +838,7 @@ AILIA_LLM_API int ailiaLLMGetMultimodalCapabilities(struct AILIALLM* llm, unsign
  *   Encoder outputs are retained only for media in the current prompt; removed media is evicted.
  *   Decoded images/audio are released when prompt setup returns.
  *   Successfully switching to a prompt without media releases the media caches.
+ *   On error, the previously set prompt is discarded as with ailiaLLMSetPrompt.
  * @note With tools configured, returns INVALID_STATE. Use ailiaLLMSetPromptJson for tool use with media.
  */
 AILIA_LLM_API int ailiaLLMSetMultimodalPrompt(struct AILIALLM* llm, const AILIALLMMultimodalChatMessage * message, unsigned int message_cnt);
@@ -866,6 +899,7 @@ AILIA_LLM_API int ailiaLLMSetTools(struct AILIALLM* llm, const char *tools_json)
  * @return 成功時SUCCESS。不正なJSON・型・ID対応・引数はINVALID_ARGUMENT。
  *   モデル未読込の場合はINVALID_STATE。
  *   その他の生成準備エラーはailiaLLMSetPromptと同じです。
+ *   エラーを返した場合はailiaLLMSetPromptと同様に、設定済みのプロンプトを破棄します。
  * \~english
  * @brief Sets a prompt from structured JSON conversation history.
  * @param llm A LLM instance pointer
@@ -895,6 +929,7 @@ AILIA_LLM_API int ailiaLLMSetTools(struct AILIALLM* llm, const char *tools_json)
  * @return SUCCESS on success; INVALID_ARGUMENT for invalid JSON, types, ID associations or arguments;
  *   INVALID_STATE if no model is loaded.
  *   Other prompt preparation errors are the same as ailiaLLMSetPrompt.
+ *   On error, the previously set prompt is discarded as with ailiaLLMSetPrompt.
  */
 AILIA_LLM_API int ailiaLLMSetPromptJson(struct AILIALLM* llm, const char *messages_json);
 
@@ -962,8 +997,11 @@ AILIA_LLM_API const char * ailiaLLMGetErrorDetail(struct AILIALLM * llm);
  * @param enabled 0: 無効（既定値）、1: 有効
  * @return 成功時はAILIA_LLM_STATUS_SUCCESS。モデルを開いた後はINVALID_STATE。
  * @details ailiaLLMCreate後、モデルを開く前に呼び出してください。
- * LLM、MTP、画像・音声グラフに適用します。切り替え時の再ロードとメモリを
- * 削減しますが、SDK内の遅延ロードにより初回実行や生成が遅くなる場合があります。
+ * LLM、MTP、画像・音声グラフに適用します。
+ * 無効時（既定値）はコンテキストを保持して速度を優先します。MTPを使用する場合はMTPを開く時点でLLM・MTPのコンテキストを、使用しない場合は最初の生成時または画像・音声の読み込み前にLLMのコンテキストを読み込みます。
+ * 有効時はコンテキストを必要時に読み込み、画像・音声とLLMの切り替え時に解放することでメモリ使用量を削減しますが、再ロードにより処理時間が増える場合があります。
+ * 画像・音声のコンテキストは、どちらの場合も初回使用時に読み込みます。
+ * メモリに余裕がない端末（SM8475のVLMなど）では有効にしてください。
  * QNNが使用できない環境で有効化を指定した場合はAILIA_LLM_STATUS_UNIMPLEMENTEDを返します。
  * 無効化はQNN非対応環境でも成功します。
  * \~english
@@ -972,9 +1010,13 @@ AILIA_LLM_API const char * ailiaLLMGetErrorDetail(struct AILIALLM * llm);
  * @param enabled 0: disabled (default), 1: enabled
  * @return SUCCESS, INVALID_ARGUMENT, INVALID_STATE after model open, or
  * AILIA_LLM_STATUS_UNIMPLEMENTED when enabling without QNN.
- * @details Call after Create and before opening a model. Applies to LLM, MTP,
- * vision and audio graphs. Reduces context reloads and memory, but SDK lazy
- * loading can increase first-execution or generation latency.
+ * @details Call after Create and before opening a model. Applies to LLM, MTP, vision and audio graphs.
+ * When disabled (default), contexts are retained to prioritize speed. The LLM context is
+ * loaded with the MTP context when the MTP model is opened, or otherwise on the first
+ * generation or before the first vision or audio input. When enabled, contexts are loaded when
+ * needed and released when switching between media and the LLM to reduce memory usage,
+ * but reloading may increase processing time. In both modes, vision and audio contexts
+ * are loaded on first use. Enable this on devices with limited memory (e.g. VLM on SM8475).
  * Disabling succeeds even when QNN is unavailable.
  */
 AILIA_LLM_API int ailiaLLMSetQNNGraphSwitching(struct AILIALLM* llm, unsigned int enabled);
